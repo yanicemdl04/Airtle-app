@@ -1,0 +1,32 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: airtel_money_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: airtel
+      POSTGRES_PASSWORD: airtel_secret
+      POSTGRES_DB: airtel_money
+    ports:
+      - "5433:5432"
+    volumes:
+      - airtel_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airtel -d airtel_money"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Interface d'administration optionnelle de la base de données.
+  adminer:
+    image: adminer:latest
+    container_name: airtel_money_adminer
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  airtel_pgdata:

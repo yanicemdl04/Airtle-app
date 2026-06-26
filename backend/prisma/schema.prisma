@@ -1,0 +1,174 @@
+// Schéma Prisma — Plateforme de paiement mobile type Airtel Money
+// Datasource PostgreSQL, client JavaScript généré.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Currency {
+  USD
+  CDF
+}
+
+enum WalletStatus {
+  ACTIVE
+  FROZEN
+  CLOSED
+}
+
+enum TransactionType {
+  SEND
+  RECEIVE
+  TOPUP
+  WITHDRAW
+}
+
+enum TransactionStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  CANCELLED
+}
+
+// ---------------------------------------------------------------------------
+// 1) USERS — identité utilisateur
+// ---------------------------------------------------------------------------
+
+model User {
+  id        String   @id @default(uuid()) @db.Uuid
+  fullName  String   @map("full_name")
+  phone     String   @unique
+  country   String
+  operator  String
+  // Le PIN n'est jamais stocké en clair (hash Argon2).
+  pinHash   String   @map("pin_hash")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  wallets           Wallet[]
+  qrCodes           QrCode[]
+  sessions          UserSession[]
+  sentTransactions     Transaction[] @relation("SenderTransactions")
+  receivedTransactions Transaction[] @relation("ReceiverTransactions")
+
+  @@map("users")
+}
+
+// ---------------------------------------------------------------------------
+// 2) WALLETS — portefeuille financier
+// ---------------------------------------------------------------------------
+
+model Wallet {
+  id              String       @id @default(uuid()) @db.Uuid
+  userId          String       @map("user_id") @db.Uuid
+  balanceUsd      Decimal      @default(0) @map("balance_usd") @db.Decimal(18, 2)
+  balanceCdf      Decimal      @default(0) @map("balance_cdf") @db.Decimal(18, 2)
+  currencyDefault Currency     @default(CDF) @map("currency_default")
+  status          WalletStatus @default(ACTIVE)
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("wallets")
+}
+
+// ---------------------------------------------------------------------------
+// 3) TRANSACTIONS — table centrale
+// ---------------------------------------------------------------------------
+
+model Transaction {
+  id             String            @id @default(uuid()) @db.Uuid
+  senderId       String?           @map("sender_id") @db.Uuid
+  receiverId     String?           @map("receiver_id") @db.Uuid
+  amount         Decimal           @db.Decimal(18, 2)
+  currency       Currency
+  type           TransactionType
+  status         TransactionStatus @default(PENDING)
+  fee            Decimal           @default(0) @db.Decimal(18, 2)
+  reference      String            @unique
+  // Empêche le rejeu d'une même opération (double transaction).
+  idempotencyKey String            @unique @map("idempotency_key")
+  createdAt      DateTime          @default(now()) @map("created_at")
+
+  sender   User? @relation("SenderTransactions", fields: [senderId], references: [id])
+  receiver User? @relation("ReceiverTransactions", fields: [receiverId], references: [id])
+
+  logs TransactionLog[]
+
+  @@index([senderId])
+  @@index([receiverId])
+  @@index([createdAt])
+  @@map("transactions")
+}
+
+// ---------------------------------------------------------------------------
+// 4) QR_CODES — QR de paiement signés
+// ---------------------------------------------------------------------------
+
+model QrCode {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  // Identifiant public non sensible, ex: airtel:CD:ab12cd34
+  payId     String    @unique @map("pay_id")
+  // Signature HMAC SHA256 du payload public.
+  signature String
+  isActive  Boolean   @default(true) @map("is_active")
+  expiresAt DateTime? @map("expires_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("qr_codes")
+}
+
+// ---------------------------------------------------------------------------
+// 5) USER_SESSIONS — appareils connectés
+// ---------------------------------------------------------------------------
+
+model UserSession {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  deviceId     String   @map("device_id")
+  ipAddress    String?  @map("ip_address")
+  // Hash du refresh token (jamais stocké en clair) pour la rotation.
+  refreshToken String   @map("refresh_token")
+  revoked      Boolean  @default(false)
+  createdAt    DateTime @default(now()) @map("created_at")
+  expiresAt    DateTime @map("expires_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([deviceId])
+  @@map("user_sessions")
+}
+
+// ---------------------------------------------------------------------------
+// 6) TRANSACTION_LOGS — audit complet
+// ---------------------------------------------------------------------------
+
+model TransactionLog {
+  id            String   @id @default(uuid()) @db.Uuid
+  transactionId String?  @map("transaction_id") @db.Uuid
+  action        String
+  metadata      Json?
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  transaction Transaction? @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  @@index([transactionId])
+  @@index([action])
+  @@map("transaction_logs")
+}
