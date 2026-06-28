@@ -23,6 +23,10 @@ export interface TokenPair {
   refresh_token: string;
 }
 
+export interface LoginResponse extends TokenPair {
+  new_device?: boolean;
+}
+
 /**
  * Service d'authentification.
  *
@@ -60,7 +64,7 @@ export class AuthService {
     });
   }
 
-  async login(dto: LoginDto, ctx: RequestContext): Promise<TokenPair> {
+  async login(dto: LoginDto, ctx: RequestContext): Promise<LoginResponse> {
     const user = await this.users.findByPhone(dto.phone);
     // Message générique pour ne pas révéler l'existence du compte.
     if (!user) {
@@ -80,7 +84,7 @@ export class AuthService {
       deviceId,
     });
 
-    return { ...tokens, ...(isNew ? { new_device: true } : {}) } as TokenPair;
+    return { ...tokens, ...(isNew && { new_device: true }) };
   }
 
   /** Rotation du refresh token : valide l'ancien puis le remplace. */
