@@ -39,26 +39,45 @@ enum TransactionStatus {
   CANCELLED
 }
 
+enum AccountType {
+  PERSONAL
+  MERCHANT
+}
+
+enum CreationChannel {
+  MOBILE
+  USSD
+}
+
 // ---------------------------------------------------------------------------
 // 1) USERS — identité utilisateur
 // ---------------------------------------------------------------------------
 
 model User {
-  id        String   @id @default(uuid()) @db.Uuid
-  fullName  String   @map("full_name")
-  phone     String   @unique
-  country   String
-  operator  String
-  // Le PIN n'est jamais stocké en clair (hash Argon2).
-  pinHash   String   @map("pin_hash")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id                  String          @id @default(uuid()) @db.Uuid
+  phoneHash           String          @unique @map("phone_hash")
+  phoneEncrypted      Bytes           @map("phone_encrypted")
+  nameEncrypted       Bytes           @map("name_encrypted")
+  displayName         String          @map("display_name")
+  avatarUrl           String?         @map("avatar_url")
+  country             String?
+  operator            String?
+  pinHash             String          @map("pin_hash")
+  accountType         AccountType     @default(PERSONAL) @map("account_type")
+  failedPinAttempts   Int             @default(0) @map("failed_pin_attempts")
+  lockedUntil         DateTime?       @map("locked_until")
+  encryptionKeyId     Int             @default(1) @map("encryption_key_id")
+  createdVia          CreationChannel @default(MOBILE) @map("created_via")
+  createdAt           DateTime        @default(now()) @map("created_at")
+  updatedAt           DateTime        @updatedAt @map("updated_at")
 
-  wallets           Wallet[]
-  qrCodes           QrCode[]
-  sessions          UserSession[]
-  sentTransactions     Transaction[] @relation("SenderTransactions")
-  receivedTransactions Transaction[] @relation("ReceiverTransactions")
+  wallets              Wallet[]
+  qrCodes             QrCode[]
+  sessions            UserSession[]
+  sentTransactions    Transaction[]   @relation("SenderTransactions")
+  receivedTransactions Transaction[]  @relation("ReceiverTransactions")
+  auditLogs           AuditLog[]
+  qrScans             QrScan[]
 
   @@map("users")
 }
@@ -117,19 +136,18 @@ model Transaction {
 // ---------------------------------------------------------------------------
 
 model QrCode {
-  id        String    @id @default(uuid()) @db.Uuid
-  userId    String    @map("user_id") @db.Uuid
-  // Identifiant public non sensible, ex: airtel:CD:ab12cd34
-  payId     String    @unique @map("pay_id")
-  // Signature HMAC SHA256 du payload public.
-  signature String
-  isActive  Boolean   @default(true) @map("is_active")
-  expiresAt DateTime? @map("expires_at")
-  createdAt DateTime  @default(now()) @map("created_at")
+  id                  String   @id @default(uuid()) @db.Uuid
+  userId              String   @map("user_id") @db.Uuid
+  token               String   @unique
+  keyId               Int      @default(1) @map("key_id")
+  revoked             Boolean  @default(false)
+  revokeScheduledAt   DateTime? @map("revoke_scheduled_at")
+  createdAt           DateTime @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scans QrScan[]
 
-  @@index([userId])
+  @@index([userId, revoked])
   @@map("qr_codes")
 }
 
@@ -171,4 +189,74 @@ model TransactionLog {
   @@index([transactionId])
   @@index([action])
   @@map("transaction_logs")
+}
+
+// ---------------------------------------------------------------------------
+// 7) QR_SCANS — audit des scans de QR
+// ---------------------------------------------------------------------------
+
+model QrScan {
+  id                  String   @id @default(uuid()) @db.Uuid
+  qrToken             String   @map("qr_token")
+  scannerUserId       String   @map("scanner_user_id") @db.Uuid
+  ipHash              String   @map("ip_hash")
+  deviceIdHash        String?  @map("device_id_hash")
+  resultedInPayment   Boolean  @default(false) @map("resulted_in_payment")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  scanner User @relation(fields: [scannerUserId], references: [id], onDelete: Cascade)
+  qrCode  QrCode @relation(fields: [qrToken], references: [token], onDelete: Cascade)
+
+  @@index([scannerUserId])
+  @@index([qrToken])
+  @@map("qr_scans")
+}
+
+// ---------------------------------------------------------------------------
+// 8) PAY_INTENTS — tracking des intents de paiement (single-use)
+// ---------------------------------------------------------------------------
+
+model PayIntent {
+  jti         String   @id
+  consumed    Boolean  @default(false)
+  expiresAt   DateTime @map("expires_at")
+  consumedAt  DateTime? @map("consumed_at")
+
+  @@index([expiresAt])
+  @@map("pay_intents")
+}
+
+// ---------------------------------------------------------------------------
+// 9) AUDIT_LOG — immuable, signé en chaîne
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id       String   @id @default(uuid()) @db.Uuid
+  userId   String?  @map("user_id") @db.Uuid
+  action   String
+  metadata Json?
+  prevHash String   @map("prev_hash")
+  hash     String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@map("audit_log")
+}
+
+// ---------------------------------------------------------------------------
+// 10) USSD_SESSIONS — sessions USSD (backup Redis)
+// ---------------------------------------------------------------------------
+
+model UssdSession {
+  sessionId String   @id @map("session_id")
+  phoneHash String   @map("phone_hash")
+  state     String
+  context   Json
+  expiresAt DateTime @map("expires_at")
+
+  @@index([phoneHash])
+  @@map("ussd_sessions")
 }
