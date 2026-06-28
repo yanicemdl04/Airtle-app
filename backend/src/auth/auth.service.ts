@@ -2,6 +2,7 @@ import {
   ConflictException,
   Injectable,
   UnauthorizedException,
+  BadRequestException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
@@ -66,20 +67,45 @@ export class AuthService {
     if (!user) {
       throw new UnauthorizedException('Identifiants invalides');
     }
-
+  
+    // ← DÉFENSE 1 : Vérifier le lockout (3 tentatives échouées → 15 min)
+    if (user.lockedUntil && user.lockedUntil > new Date()) {
+      throw new UnauthorizedException(
+        `Compte verrouillé. Réessayez après ${user.lockedUntil.toISOString()}`,
+      );
+    }
+  
+    // ← DÉFENSE 2 : Vérifier le PIN
     const valid = await argon2.verify(user.pinHash, dto.pin);
     if (!valid) {
+      // Incrémenter les tentatives échouées
+      const newAttempts = (user.failedPinAttempts || 0) + 1;
+      const isLocked = newAttempts >= 3;
+  
+      await this.users.update(user.id, {
+        failedPinAttempts: newAttempts,
+        lockedUntil: isLocked
+          ? new Date(Date.now() + 15 * 60 * 1000) // 15 minutes
+          : null,
+      });
+  
       throw new UnauthorizedException('Identifiants invalides');
     }
-
+  
+    // ← DÉFENSE 3 : Réinitialiser les tentatives au login réussi
+    await this.users.update(user.id, {
+      failedPinAttempts: 0,
+      lockedUntil: null,
+    });
+  
     const deviceId = dto.deviceId ?? ctx.deviceId ?? 'unknown-device';
     const isNew = await this.sessions.isNewDevice(user.id, deviceId);
-
+  
     const tokens = await this.issueSession(user.id, user.phone, {
       ipAddress: ctx.ipAddress,
       deviceId,
     });
-
+  
     return { ...tokens, ...(isNew ? { new_device: true } : {}) } as TokenPair;
   }
 

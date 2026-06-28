@@ -5,14 +5,20 @@ import {
   IsString,
   Length,
   Matches,
+  IsEnum,
 } from 'class-validator';
 
+enum AccountType {
+  PERSONAL = 'PERSONAL',
+  MERCHANT = 'MERCHANT',
+}
+
 export class RegisterDto {
-  @ApiProperty({ example: 'Mutombo Kabila' })
+  @ApiProperty({ example: 'Marie Mukendi' })
   @IsString()
   @IsNotEmpty()
   @Length(2, 100)
-  fullName: string;
+  displayName: string;
 
   @ApiProperty({ example: '+243999939477' })
   @IsString()
@@ -21,15 +27,15 @@ export class RegisterDto {
   })
   phone: string;
 
-  @ApiProperty({ example: 'CD' })
+  @ApiProperty({ example: 'CD', required: false })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  country: string;
+  country?: string;
 
-  @ApiProperty({ example: 'Airtel' })
+  @ApiProperty({ example: 'Airtel', required: false })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  operator: string;
+  operator?: string;
 
   @ApiProperty({ example: '1234', description: 'PIN à 4-6 chiffres' })
   @IsString()
@@ -37,6 +43,16 @@ export class RegisterDto {
     message: 'Le PIN doit contenir entre 4 et 6 chiffres',
   })
   pin: string;
+
+  @ApiProperty({
+    example: 'PERSONAL',
+    enum: AccountType,
+    required: false,
+    description: 'Type de compte : PERSONAL ou MERCHANT',
+  })
+  @IsOptional()
+  @IsEnum(AccountType)
+  accountType?: AccountType;
 
   @ApiProperty({ example: 'device-abc-123', required: false })
   @IsOptional()
