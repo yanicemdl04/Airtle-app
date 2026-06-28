@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../constants/colors.dart';
+import '../widgets/profile_avatar.dart';
 import '../services/wallet_store.dart';
 
 /// Carte flottante de profil et de solde.
@@ -85,21 +86,30 @@ class _BalanceCardState extends State<BalanceCard> {
         Expanded(
           child: Row(
             children: [
-              const CircleAvatar(
-                radius: 16,
-                backgroundColor: AppColors.redTint,
-                child: Icon(Icons.person, color: AppColors.primaryRed, size: 20),
-              ),
+              ProfileAvatar(name: widget.name, radius: 16),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(
-                  '${widget.name} | ${widget.phone}',
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.name.isNotEmpty ? widget.name : 'Mon compte',
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    Text(
+                      widget.phone.isNotEmpty ? widget.phone : '—',
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],

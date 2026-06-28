@@ -30,7 +30,7 @@ class BottomNav extends StatelessWidget {
     BottomNavData(
       icon: Icons.home_outlined,
       activeIcon: Icons.home_rounded,
-      label: 'Accueil',
+      label: 'My Airtel',
     ),
     BottomNavData(
       icon: Icons.account_balance_wallet_outlined,

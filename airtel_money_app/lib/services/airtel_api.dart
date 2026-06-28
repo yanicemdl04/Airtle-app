@@ -1,4 +1,3 @@
-import '../config/api_config.dart';
 import '../models/recipient.dart';
 import '../models/transaction_record.dart';
 import 'api_client.dart';
@@ -9,27 +8,6 @@ class AirtelApi {
 
   static final AirtelApi instance = AirtelApi._();
   final _client = ApiClient.instance;
-
-  Future<Map<String, String>> login({
-    required String phone,
-    required String pin,
-  }) async {
-    final data = await _client.post('/auth/login', data: {
-      'phone': phone,
-      'pin': pin,
-      'deviceId': ApiConfig.deviceId,
-    });
-    await _client.setTokens(
-      accessToken: data['access_token'] as String,
-      refreshToken: data['refresh_token'] as String,
-    );
-    return {
-      'access_token': data['access_token'] as String,
-      'refresh_token': data['refresh_token'] as String,
-    };
-  }
-
-  Future<void> logout() => _client.clearTokens();
 
   Future<Map<String, dynamic>> getProfile() => _client.get('/users/profile');
 

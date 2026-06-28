@@ -1,32 +1,23 @@
 import { Controller, Get } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { ApiExcludeController } from '@nestjs/swagger';
 import { Public } from './common/decorators/public.decorator';
+import { SkipTransform } from './common/decorators/skip-transform.decorator';
 
+@ApiExcludeController()
 @Controller()
 export class AppController {
-  /** Point d'entrée — évite le 404 quand on ouvre /api dans le navigateur. */
+  constructor(private readonly config: ConfigService) {}
+
   @Public()
+  @SkipTransform()
   @Get()
   root() {
     return {
-      service: 'airtel-money-api',
-      status: 'ok',
-      message: 'API Airtel Money opérationnelle',
-      endpoints: {
-        health: '/api/health',
-        login: 'POST /api/auth/login',
-        swagger: '/docs',
-      },
-    };
-  }
-
-  /** Ping léger pour vérifier que l'API est joignable (sans auth, sans DB). */
-  @Public()
-  @Get('health')
-  health() {
-    return {
-      status: 'ok',
-      service: 'airtel-money-api',
-      ts: Date.now(),
+      success: true,
+      message: 'Airtel Money API is running',
+      environment: this.config.get<string>('NODE_ENV') ?? 'development',
+      timestamp: new Date().toISOString(),
     };
   }
 }

@@ -8,10 +8,11 @@ import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
 import { SessionsService } from '../sessions/sessions.service';
 import { UsersService } from '../users/users.service';
-import { JwtPayload } from './jwt.strategy';
 import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
 import { RegisterDto } from './dto/register.dto';
+import { JwtPayload } from './jwt.strategy';
+import { normalizePhone } from './utils/phone.util';
 
 interface RequestContext {
   ipAddress?: string;
@@ -23,13 +24,6 @@ export interface TokenPair {
   refresh_token: string;
 }
 
-/**
- * Service d'authentification.
- *
- * - PIN hashé avec Argon2 (jamais stocké ni renvoyé en clair).
- * - Access token court + refresh token long avec rotation par session.
- * - Détection de nouvel appareil au login.
- */
 @Injectable()
 export class AuthService {
   constructor(
@@ -40,50 +34,48 @@ export class AuthService {
   ) {}
 
   async register(dto: RegisterDto, ctx: RequestContext): Promise<TokenPair> {
-    const existing = await this.users.findByPhone(dto.phone);
+    const phone = normalizePhone(dto.phone);
+    const existing = await this.users.findByPhone(phone);
     if (existing) {
       throw new ConflictException('Ce numéro de téléphone est déjà utilisé');
     }
 
-    const pinHash = await argon2.hash(dto.pin);
+    const pinHash = await argon2.hash(dto.pin.trim());
     const user = await this.users.create({
-      fullName: dto.fullName,
-      phone: dto.phone,
+      fullName: dto.fullName.trim(),
+      phone,
       country: dto.country,
       operator: dto.operator,
       pinHash,
     });
 
-    return this.issueSession(user.id, user.phone, {
+    return this.createSession(user.id, user.phone, {
       ipAddress: ctx.ipAddress,
-      deviceId: dto.deviceId ?? ctx.deviceId,
+      deviceId: dto.deviceId?.trim() ?? ctx.deviceId,
     });
   }
 
   async login(dto: LoginDto, ctx: RequestContext): Promise<TokenPair> {
-    const user = await this.users.findByPhone(dto.phone);
-    // Message générique pour ne pas révéler l'existence du compte.
+    const phone = normalizePhone(dto.phone);
+    const pin = dto.pin.trim();
+
+    const user = await this.users.findByPhone(phone);
     if (!user) {
       throw new UnauthorizedException('Identifiants invalides');
     }
 
-    const valid = await argon2.verify(user.pinHash, dto.pin);
-    if (!valid) {
+    const pinOk = await argon2.verify(user.pinHash, pin);
+    if (!pinOk) {
       throw new UnauthorizedException('Identifiants invalides');
     }
 
-    const deviceId = dto.deviceId ?? ctx.deviceId ?? 'unknown-device';
-    const isNew = await this.sessions.isNewDevice(user.id, deviceId);
-
-    const tokens = await this.issueSession(user.id, user.phone, {
+    return this.createSession(user.id, user.phone, {
       ipAddress: ctx.ipAddress,
-      deviceId,
+      deviceId: dto.deviceId?.trim() ?? ctx.deviceId,
     });
-
-    return { ...tokens, ...(isNew ? { new_device: true } : {}) } as TokenPair;
   }
 
-  /** Rotation du refresh token : valide l'ancien puis le remplace. */
+  /** Rotation du refresh token après validation en base. */
   async refresh(dto: RefreshDto): Promise<TokenPair> {
     let payload: JwtPayload;
     try {
@@ -102,39 +94,32 @@ export class AuthService {
       throw new UnauthorizedException('Session invalide ou révoquée');
     }
 
-    const tokens = await this.generateTokens(payload.sub, payload.phone);
+    const tokens = await this.signTokens(payload.sub, payload.phone);
     await this.sessions.rotate(
       session.id,
       tokens.refresh_token,
-      this.refreshExpiryDate(),
+      this.refreshExpiresAt(),
     );
     return tokens;
   }
 
-  // -------------------------------------------------------------------------
-  // Helpers privés
-  // -------------------------------------------------------------------------
-
-  private async issueSession(
+  private async createSession(
     userId: string,
     phone: string,
     ctx: RequestContext,
   ): Promise<TokenPair> {
-    const tokens = await this.generateTokens(userId, phone);
+    const tokens = await this.signTokens(userId, phone);
     await this.sessions.create({
       userId,
-      deviceId: ctx.deviceId ?? 'unknown-device',
+      deviceId: ctx.deviceId?.trim() || 'unknown-device',
       ipAddress: ctx.ipAddress,
       refreshToken: tokens.refresh_token,
-      expiresAt: this.refreshExpiryDate(),
+      expiresAt: this.refreshExpiresAt(),
     });
     return tokens;
   }
 
-  private async generateTokens(
-    userId: string,
-    phone: string,
-  ): Promise<TokenPair> {
+  private async signTokens(userId: string, phone: string): Promise<TokenPair> {
     const payload: JwtPayload = { sub: userId, phone };
 
     const [access_token, refresh_token] = await Promise.all([
@@ -151,25 +136,21 @@ export class AuthService {
     return { access_token, refresh_token };
   }
 
-  private refreshExpiryDate(): Date {
+  private refreshExpiresAt(): Date {
     const raw = this.config.get<string>('JWT_REFRESH_EXPIRES_IN', '7d');
-    return new Date(Date.now() + this.durationToMs(raw));
+    return new Date(Date.now() + this.parseDurationMs(raw));
   }
 
-  /** Convertit une durée type "15m", "7d", "3600s" en millisecondes. */
-  private durationToMs(value: string): number {
+  private parseDurationMs(value: string): number {
     const match = /^(\d+)([smhd])$/.exec(value.trim());
-    if (!match) {
-      return 7 * 24 * 60 * 60 * 1000;
-    }
+    if (!match) return 7 * 24 * 60 * 60 * 1000;
     const amount = Number(match[1]);
-    const unit = match[2];
     const factors: Record<string, number> = {
       s: 1000,
       m: 60 * 1000,
       h: 60 * 60 * 1000,
       d: 24 * 60 * 60 * 1000,
     };
-    return amount * factors[unit];
+    return amount * factors[match[2]];
   }
 }

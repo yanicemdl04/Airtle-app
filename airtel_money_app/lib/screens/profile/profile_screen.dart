@@ -4,6 +4,8 @@ import '../../constants/colors.dart';
 import '../../constants/spacing.dart';
 import '../../routes/app_routes.dart';
 import '../../screens/auth_gate.dart';
+import '../../services/auth_service.dart';
+import '../../services/toast_service.dart';
 import '../../services/wallet_store.dart';
 import '../../widgets/airtel_card.dart';
 import '../../widgets/animated_button.dart';
@@ -11,6 +13,42 @@ import '../../widgets/animated_button.dart';
 /// Écran profil utilisateur : infos, sécurité, appareils, déconnexion.
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
+
+  void _comingSoon(BuildContext context, String feature) {
+    ToastService.info(context, feature, message: 'Bientôt disponible');
+  }
+
+  void _showMyInfo(BuildContext context) {
+    final store = WalletStore.instance;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Mes informations',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            _InfoRow(label: 'Nom', value: store.ownerName.isNotEmpty ? store.ownerName : '—'),
+            _InfoRow(label: 'Téléphone', value: store.ownerPhone.isNotEmpty ? store.ownerPhone : '—'),
+            _InfoRow(
+              label: 'Compte',
+              value: store.ownerPayId.isNotEmpty ? store.ownerPayId : '—',
+            ),
+            const SizedBox(height: AppSpacing.sm),
+          ],
+        ),
+      ),
+    );
+  }
 
   Future<void> _logout(BuildContext context) async {
     final confirm = await showDialog<bool>(
@@ -38,7 +76,7 @@ class ProfileScreen extends StatelessWidget {
     );
 
     if (confirm != true || !context.mounted) return;
-    await WalletStore.instance.logout();
+    await AuthService.instance.logout();
     if (!context.mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const AuthGate()),
@@ -138,14 +176,18 @@ class ProfileScreen extends StatelessWidget {
                 _ProfileTile(
                   icon: Icons.person_outline_rounded,
                   title: 'Mes informations',
-                  subtitle: 'Nom, téléphone, e-mail',
-                  onTap: () {},
+                  subtitle: 'Nom, téléphone, compte',
+                  onTap: () => _showMyInfo(context),
                 ),
                 _ProfileTile(
                   icon: Icons.verified_user_outlined,
                   title: 'Vérification KYC',
                   subtitle: 'Identité vérifiée',
-                  onTap: () {},
+                  onTap: () => ToastService.success(
+                    context,
+                    'KYC vérifié',
+                    message: 'Votre identité est déjà confirmée.',
+                  ),
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 _SectionTitle('Sécurité'),
@@ -153,19 +195,19 @@ class ProfileScreen extends StatelessWidget {
                   icon: Icons.lock_outline_rounded,
                   title: 'Code PIN',
                   subtitle: 'Modifier votre PIN de transaction',
-                  onTap: () {},
+                  onTap: () => _comingSoon(context, 'Modification du PIN'),
                 ),
                 _ProfileTile(
                   icon: Icons.fingerprint_rounded,
                   title: 'Biométrie',
                   subtitle: 'Empreinte ou Face ID',
-                  onTap: () {},
+                  onTap: () => _comingSoon(context, 'Authentification biométrique'),
                 ),
                 _ProfileTile(
                   icon: Icons.devices_rounded,
                   title: 'Appareils connectés',
                   subtitle: '1 appareil actif',
-                  onTap: () {},
+                  onTap: () => _comingSoon(context, 'Gestion des appareils'),
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 _SectionTitle('Préférences'),
@@ -180,7 +222,7 @@ class ProfileScreen extends StatelessWidget {
                   icon: Icons.language_rounded,
                   title: 'Langue',
                   subtitle: 'Français',
-                  onTap: () {},
+                  onTap: () => _comingSoon(context, 'Changement de langue'),
                 ),
                 const SizedBox(height: AppSpacing.md),
                 AnimatedButton(
@@ -190,6 +232,46 @@ class ProfileScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.sm),
               ]),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InfoRow extends StatelessWidget {
+  const _InfoRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 96,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: AppColors.textMuted,
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.w700,
+                fontSize: 14,
+              ),
             ),
           ),
         ],

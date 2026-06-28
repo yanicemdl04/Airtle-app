@@ -6,7 +6,6 @@ import '../config/performance_config.dart';
 import '../models/app_notification.dart';
 import '../models/recipient.dart';
 import '../models/transaction_record.dart';
-import '../utils/phone_utils.dart';
 import 'airtel_api.dart';
 import 'api_client.dart';
 import 'api_exception.dart';
@@ -73,7 +72,7 @@ class WalletStore extends ChangeNotifier {
 
   Map<String, dynamic>? get cachedQr => _qrCache;
 
-  /// Charge le cache disque (instantané) avant tout appel réseau.
+  /// Restaure le cache disque (sans auth — utilisé par AuthService).
   Future<void> hydrateFromDisk() async {
     if (_hydratedFromDisk) return;
 
@@ -104,48 +103,13 @@ class WalletStore extends ChangeNotifier {
     _notifyListenersDebounced();
   }
 
-  /// Restaure la session : cache disque → réseau (non bloquant si cache présent).
-  Future<bool> restoreSession() async {
-    await ApiClient.instance.init();
-    await hydrateFromDisk();
-    if (!ApiClient.instance.isAuthenticated) return false;
-
-    if (hasDashboardData && ownerId.isNotEmpty) {
-      unawaited(
-        refreshAll(force: true).catchError((_) => null),
-      );
-      return true;
-    }
-
-    try {
-      await refreshAll(force: true);
-      return ownerId.isNotEmpty;
-    } catch (_) {
-      if (hasDashboardData && ownerId.isNotEmpty) return true;
-      await ApiClient.instance.clearTokens();
-      await LocalDataStore.clearAll();
-      return false;
-    }
-  }
-
-  Future<void> login(String phone, String pin) async {
-    final normalizedPhone = normalizePhone(phone);
-    try {
-      await _api.login(phone: normalizedPhone, pin: pin.trim());
-      _error = null;
-      // Navigation immédiate : profil et wallet se chargent ensuite.
-      unawaited(_syncAfterLogin());
-    } catch (e) {
-      _error = e is ApiException ? e.message : 'Connexion impossible';
-      AppLogger.error('WalletStore', 'Échec login', error: e);
-      rethrow;
-    }
-  }
-
-  Future<void> _syncAfterLogin() async {
+  /// Sync léger post-login — profil d'abord, reste en arrière-plan.
+  Future<void> syncAfterLogin() async {
     try {
       await _loadProfile(force: true);
-      await refreshWallet(force: true);
+      _notifyListenersDebounced();
+      unawaited(refreshWallet(force: true));
+      unawaited(fetchMyQr(force: true));
       unawaited(refreshTransactions(force: true));
     } catch (e, st) {
       AppLogger.error(
@@ -157,8 +121,8 @@ class WalletStore extends ChangeNotifier {
     }
   }
 
-  Future<void> logout() async {
-    await _api.logout();
+  /// Efface l'état utilisateur local (cache mémoire + disque).
+  Future<void> clearUserData() async {
     ownerId = '';
     ownerName = '';
     ownerPhone = '';
@@ -317,8 +281,10 @@ class WalletStore extends ChangeNotifier {
 
     final data = await _api.getMyQr();
     _qrCache = data;
+    ownerPayId = (data['pay_id'] as String?) ?? ownerPayId;
     _qrFetchedAt = DateTime.now();
     await LocalDataStore.saveQr(data);
+    _notifyListenersDebounced();
     return data;
   }
 
@@ -400,8 +366,13 @@ class WalletStore extends ChangeNotifier {
 
   String _formatPhone(String phone) {
     final digits = phone.replaceAll(RegExp(r'\D'), '');
-    if (digits.length >= 9) return digits.substring(digits.length - 9);
-    return digits;
+    if (digits.startsWith('243') && digits.length >= 12) {
+      return '+$digits';
+    }
+    if (digits.length >= 9) {
+      return '+243${digits.substring(digits.length - 9)}';
+    }
+    return digits.isNotEmpty ? '+$digits' : phone;
   }
 
   void _notify({

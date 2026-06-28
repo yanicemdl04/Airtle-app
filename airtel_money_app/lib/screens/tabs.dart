@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../constants/colors.dart';
-import '../services/wallet_store.dart';
+import '../services/auth_service.dart';
 import '../widgets/menu_item.dart';
 import '../widgets/service_card.dart';
 import 'auth_gate.dart';
@@ -220,7 +220,7 @@ class PlusTab extends StatelessWidget {
   const PlusTab({super.key});
 
   Future<void> _logout(BuildContext context) async {
-    await WalletStore.instance.logout();
+    await AuthService.instance.logout();
     if (!context.mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const AuthGate()),

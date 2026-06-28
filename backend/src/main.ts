@@ -1,6 +1,6 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication, RequestMethod, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { NestFactory } from '@nestjs/core';
+import { NestFactory, Reflector } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
@@ -8,14 +8,12 @@ import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 
 const FALLBACK_PORT_ATTEMPTS = 5;
-const HEALTH_SERVICE_ID = 'airtel-money-api';
 
 async function bootstrap() {
-  const basePort = Number(process.env.PORT ?? 3001);
+  const basePort = Number(process.env.PORT ?? 3000);
   const host = process.env.HOST ?? '127.0.0.1';
 
-  // Vérification AVANT de créer Nest — évite app.close() + process.exit() (crash libuv Windows).
-  if (await isOurApiRunning(host, basePort)) {
+  if (await isApiRunning(host, basePort)) {
     logAlreadyRunning(basePort);
     return;
   }
@@ -25,15 +23,9 @@ async function bootstrap() {
 
   app.use(helmet());
 
-  const origins = (config.get<string>('CORS_ORIGINS') ?? '')
-    .split(',')
-    .map((o) => o.trim())
-    .filter(Boolean);
   app.enableCors({
-    origin: origins.length ? origins : true,
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Device-Id'],
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
   });
 
   app.useGlobalPipes(
@@ -46,26 +38,30 @@ async function bootstrap() {
   );
 
   app.useGlobalFilters(new AllExceptionsFilter());
-  app.useGlobalInterceptors(new TransformInterceptor());
+  app.useGlobalInterceptors(
+    new TransformInterceptor(app.get(Reflector)),
+  );
 
-  app.setGlobalPrefix('api');
+  app.setGlobalPrefix('api', {
+    exclude: [{ path: '', method: RequestMethod.GET }],
+  });
 
   const swaggerConfig = new DocumentBuilder()
-    .setTitle('Airtel Money API')
+    .setTitle('Airtel Money Backend API')
     .setDescription(
-      'API REST de la plateforme de paiement mobile (consommée par Flutter).',
+      'API REST de la plateforme de paiement mobile Airtel Money, consommée par l’application Flutter.',
     )
     .setVersion('1.0')
     .addBearerAuth()
     .build();
   const document = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup('docs', app, document);
+  SwaggerModule.setup('api/docs', app, document);
 
   const port = await listenWithFallback(app, config);
   logStartup(config, port);
 }
 
-async function isOurApiRunning(host: string, port: number): Promise<boolean> {
+async function isApiRunning(host: string, port: number): Promise<boolean> {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 2000);
@@ -75,11 +71,10 @@ async function isOurApiRunning(host: string, port: number): Promise<boolean> {
     clearTimeout(timer);
     if (!res.ok) return false;
     const json = (await res.json()) as {
-      data?: { service?: string };
-      service?: string;
+      status?: string;
+      database?: string;
     };
-    const service = json?.data?.service ?? json?.service;
-    return service === HEALTH_SERVICE_ID;
+    return json.status === 'ok' && json.database === 'connected';
   } catch {
     return false;
   }
@@ -89,7 +84,7 @@ async function listenWithFallback(
   app: INestApplication,
   config: ConfigService,
 ): Promise<number> {
-  const basePort = Number(config.get<string>('PORT') ?? 3001);
+  const basePort = Number(config.get<string>('PORT') ?? 3000);
   const host = config.get<string>('HOST') ?? '127.0.0.1';
 
   for (let i = 0; i < FALLBACK_PORT_ATTEMPTS; i++) {
@@ -130,8 +125,8 @@ async function listenWithFallback(
 function logAlreadyRunning(port: number) {
   // eslint-disable-next-line no-console
   console.log(
-    `\n✅ L'API tourne déjà sur http://localhost:${port}/api\n` +
-      `📚 Swagger : http://localhost:${port}/docs\n` +
+    `\n✅ L'API tourne déjà sur http://localhost:${port}/\n` +
+      `📚 Swagger : http://localhost:${port}/api/docs\n` +
       `   → Inutile de relancer npm run start:dev.\n` +
       `   → Pour redémarrer : npm run restart:dev\n`,
   );
@@ -140,11 +135,13 @@ function logAlreadyRunning(port: number) {
 function logStartup(config: ConfigService, port: number) {
   const host = config.get<string>('HOST') ?? '127.0.0.1';
   // eslint-disable-next-line no-console
-  console.log(`\n🚀 Airtel Money API : http://localhost:${port}/api`);
+  console.log(`\n🚀 Airtel Money API : http://localhost:${port}/`);
   // eslint-disable-next-line no-console
-  console.log(`📚 Swagger : http://localhost:${port}/docs`);
+  console.log(`📚 Swagger : http://localhost:${port}/api/docs`);
   // eslint-disable-next-line no-console
-  console.log(`📱 Réseau local (Flutter) : http://<IP_PC>:${port}/api`);
+  console.log(`💚 Health : http://localhost:${port}/api/health`);
+  // eslint-disable-next-line no-console
+  console.log(`📱 Flutter / ngrok : https://<votre-url>.ngrok.app/api`);
   if (host === '127.0.0.1') {
     // eslint-disable-next-line no-console
     console.log(

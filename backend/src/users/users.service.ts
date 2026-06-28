@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { phoneLookupVariants } from '../auth/utils/phone.util';
 import { PrismaService } from '../prisma/prisma.service';
 
 interface CreateUserInput {
@@ -18,8 +19,15 @@ interface CreateUserInput {
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findByPhone(phone: string) {
-    return this.prisma.user.findUnique({ where: { phone } });
+  async findByPhone(rawPhone: string) {
+    const variants = phoneLookupVariants(rawPhone);
+
+    for (const phone of variants) {
+      const user = await this.prisma.user.findUnique({ where: { phone } });
+      if (user) return user;
+    }
+
+    return null;
   }
 
   async findById(id: string) {

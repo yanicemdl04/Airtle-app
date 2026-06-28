@@ -2,6 +2,7 @@ import { Body, Controller, Post, Req } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
 import { Public } from '../common/decorators/public.decorator';
+import { SkipTransform } from '../common/decorators/skip-transform.decorator';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
@@ -13,6 +14,7 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Public()
+  @SkipTransform()
   @Post('register')
   @ApiOperation({ summary: 'Créer un compte utilisateur' })
   register(@Body() dto: RegisterDto, @Req() req: Request) {
@@ -20,6 +22,7 @@ export class AuthController {
   }
 
   @Public()
+  @SkipTransform()
   @Post('login')
   @ApiOperation({ summary: 'Connexion — retourne access_token + refresh_token' })
   login(@Body() dto: LoginDto, @Req() req: Request) {
@@ -27,6 +30,7 @@ export class AuthController {
   }
 
   @Public()
+  @SkipTransform()
   @Post('refresh')
   @ApiOperation({ summary: 'Rafraîchir les tokens (rotation du refresh token)' })
   refresh(@Body() dto: RefreshDto) {

@@ -1,9 +1,6 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:qr_flutter/qr_flutter.dart';
 
 import '../constants/colors.dart';
 import '../constants/spacing.dart';
@@ -12,6 +9,7 @@ import '../services/toast_service.dart';
 import '../services/wallet_store.dart';
 import '../widgets/animated_button.dart';
 import '../widgets/glass_container.dart';
+import '../widgets/qr_display.dart';
 import '../widgets/shimmer_loading.dart';
 
 /// Écran « Mon QR » — affichage premium avec glassmorphism.
@@ -23,30 +21,43 @@ class MyQrScreen extends StatefulWidget {
 }
 
 class _MyQrScreenState extends State<MyQrScreen> {
-  Map<String, dynamic>? _qrData;
   String? _error;
   bool _loading = false;
 
   @override
   void initState() {
     super.initState();
-    _qrData = WalletStore.instance.cachedQr;
-    _load(showCacheFirst: _qrData != null);
+    WalletStore.instance.addListener(_onStoreChanged);
+    _load(force: WalletStore.instance.cachedQr == null);
   }
 
-  Future<void> _load({bool showCacheFirst = false, bool force = false}) async {
-    if (!showCacheFirst) {
+  @override
+  void dispose() {
+    WalletStore.instance.removeListener(_onStoreChanged);
+    super.dispose();
+  }
+
+  void _onStoreChanged() {
+    if (mounted && WalletStore.instance.cachedQr != null && _loading) {
       setState(() {
-        _loading = true;
+        _loading = false;
         _error = null;
       });
     }
+  }
+
+  Future<void> _load({bool force = false}) async {
+    if (WalletStore.instance.cachedQr != null && !force) return;
+
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
 
     try {
-      final data = await WalletStore.instance.fetchMyQr(force: force);
+      await WalletStore.instance.fetchMyQr(force: true);
       if (mounted) {
         setState(() {
-          _qrData = data;
           _loading = false;
           _error = null;
         });
@@ -58,6 +69,13 @@ class _MyQrScreenState extends State<MyQrScreen> {
           _loading = false;
         });
       }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = 'Impossible de charger le QR : $e';
+          _loading = false;
+        });
+      }
     }
   }
 
@@ -66,11 +84,10 @@ class _MyQrScreenState extends State<MyQrScreen> {
     return '${phone.substring(0, 3)} ••• ${phone.substring(phone.length - 3)}';
   }
 
-  void _share() {
-    if (_qrData == null) return;
-    Clipboard.setData(
-      ClipboardData(text: _qrData!['pay_id'] as String),
-    );
+  void _share(Map<String, dynamic>? qrData) {
+    final payId = qrData?['pay_id']?.toString();
+    if (payId == null || payId.isEmpty) return;
+    Clipboard.setData(ClipboardData(text: payId));
     ToastService.success(
       context,
       'Copié',
@@ -78,144 +95,114 @@ class _MyQrScreenState extends State<MyQrScreen> {
     );
   }
 
-  void _download() {
-    ToastService.info(
-      context,
-      'Téléchargement',
-      message: 'Fonctionnalité disponible prochainement',
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final store = WalletStore.instance;
-
     return Scaffold(
       backgroundColor: AppColors.scaffoldBackground,
-      appBar: AppBar(title: const Text('Mon QR')),
-      body: _loading && _qrData == null
-          ? const Center(child: BalanceShimmer())
-          : _error != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(AppSpacing.md),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          _error!,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(color: AppColors.primaryRed),
-                        ),
-                        const SizedBox(height: AppSpacing.sm),
-                        AnimatedButton(label: 'Réessayer', onPressed: () => _load(force: true)),
-                      ],
+      appBar: AppBar(
+        title: const Text('Mon QR'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded),
+            onPressed: _loading ? null : () => _load(force: true),
+          ),
+        ],
+      ),
+      body: ListenableBuilder(
+        listenable: WalletStore.instance,
+        builder: (context, _) {
+          final store = WalletStore.instance;
+          final qrData = store.cachedQr;
+
+          if (_loading && qrData == null) {
+            return const Center(child: BalanceShimmer());
+          }
+
+          if (_error != null && qrData == null) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _error!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: AppColors.primaryRed),
                     ),
-                  ),
-                )
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.all(AppSpacing.sm),
+                    const SizedBox(height: AppSpacing.sm),
+                    AnimatedButton(
+                      label: 'Réessayer',
+                      onPressed: () => _load(force: true),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(AppSpacing.sm),
+            child: Column(
+              children: [
+                GlassContainer(
+                  padding: const EdgeInsets.all(AppSpacing.md),
                   child: Column(
                     children: [
-                      GlassContainer(
-                        padding: const EdgeInsets.all(AppSpacing.md),
-                        child: Column(
-                          children: [
-                            Text(
-                              store.ownerName,
-                              style: const TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ).animate().fadeIn().slideY(begin: 0.1, end: 0),
-                            const SizedBox(height: 4),
-                            Text(
-                              _maskedPhone(store.ownerPhone),
-                              style: const TextStyle(
-                                color: AppColors.textSecondary,
-                              ),
-                            ),
-                            const SizedBox(height: AppSpacing.md),
-                            Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius:
-                                    BorderRadius.circular(AppSpacing.cardRadius),
-                              ),
-                              child: QrImageView(
-                                data: jsonEncode(_qrData!['qr_content']),
-                                version: QrVersions.auto,
-                                size: 220,
-                                eyeStyle: const QrEyeStyle(
-                                  eyeShape: QrEyeShape.square,
-                                  color: AppColors.primaryRed,
-                                ),
-                                dataModuleStyle: const QrDataModuleStyle(
-                                  dataModuleShape: QrDataModuleShape.square,
-                                  color: AppColors.textPrimary,
-                                ),
-                              ),
-                            ).animate(delay: 100.ms).scale(
-                                  begin: const Offset(0.9, 0.9),
-                                  end: const Offset(1, 1),
-                                  curve: Curves.elasticOut,
-                                ),
-                            const SizedBox(height: AppSpacing.sm),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 8,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppColors.redTint,
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Text(
-                                _qrData!['pay_id'] as String,
-                                style: const TextStyle(
-                                  color: AppColors.primaryRed,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            const Text(
-                              'Faites scanner ce code pour recevoir un paiement',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: AppColors.textMuted,
-                              ),
-                            ),
-                          ],
+                      Text(
+                        store.ownerName.isNotEmpty
+                            ? store.ownerName
+                            : 'Mon compte',
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ).animate().fadeIn().slideY(begin: 0.1, end: 0),
+                      const SizedBox(height: 4),
+                      Text(
+                        _maskedPhone(store.ownerPhone),
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
                         ),
                       ),
-                      const SizedBox(height: AppSpacing.sm),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: AnimatedButton(
-                              label: 'Partager',
-                              icon: Icons.share_rounded,
-                              secondary: true,
-                              onPressed: _share,
-                            ),
+                      const SizedBox(height: AppSpacing.md),
+                      QrDisplay(qrData: qrData)
+                          .animate(delay: 100.ms)
+                          .scale(
+                            begin: const Offset(0.9, 0.9),
+                            end: const Offset(1, 1),
+                            curve: Curves.elasticOut,
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: AnimatedButton(
-                              label: 'Télécharger',
-                              icon: Icons.download_rounded,
-                              onPressed: _download,
-                            ),
-                          ),
-                        ],
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Faites scanner ce code pour recevoir un paiement',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textMuted,
+                        ),
                       ),
                     ],
                   ),
                 ),
+                const SizedBox(height: AppSpacing.sm),
+                Row(
+                  children: [
+                    Expanded(
+                      child: AnimatedButton(
+                        label: 'Partager',
+                        icon: Icons.share_rounded,
+                        secondary: true,
+                        onPressed: qrData == null ? () {} : () => _share(qrData),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 }

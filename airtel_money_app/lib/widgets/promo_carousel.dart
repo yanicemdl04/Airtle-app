@@ -7,6 +7,7 @@ import 'package:smooth_page_indicator/smooth_page_indicator.dart';
 import '../constants/app_assets.dart';
 import '../constants/colors.dart';
 import '../constants/spacing.dart';
+import '../widgets/app_image.dart';
 import '../services/toast_service.dart';
 
 /// Données d'une slide promotionnelle.
@@ -178,13 +179,9 @@ class _PromoSlideCard extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            Image.asset(
-              slide.image,
+            AppImage(
+              asset: slide.image,
               fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => Container(
-                color: AppColors.redTint,
-                child: const Icon(Icons.image_outlined, color: AppColors.primaryRed),
-              ),
             ),
             DecoratedBox(
               decoration: BoxDecoration(

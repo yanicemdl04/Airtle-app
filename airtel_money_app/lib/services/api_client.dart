@@ -53,15 +53,13 @@ class ApiClient {
       InterceptorsWrapper(
 
         onRequest: (options, handler) {
-
           if (_accessToken != null) {
-
             options.headers['Authorization'] = 'Bearer $_accessToken';
-
           }
-
+          if (options.uri.host.contains('ngrok')) {
+            options.headers['ngrok-skip-browser-warning'] = 'true';
+          }
           handler.next(options);
-
         },
 
         onError: (error, handler) async {
@@ -188,7 +186,19 @@ class ApiClient {
 
     await ApiConfig.init();
 
-    updateBaseUrl(ApiConfig.baseUrl);
+    final active = ConnectionService.instance.activeUrl;
+
+    final url = (active != null && active.isNotEmpty)
+
+        ? active
+
+        : ApiConfig.baseUrl;
+
+    if (url.isNotEmpty) {
+
+      updateBaseUrl(url);
+
+    }
 
     final prefs = await SharedPreferences.getInstance();
 
@@ -292,6 +302,28 @@ class ApiClient {
 
     );
 
+  }
+
+
+
+  /// POST auth direct (login/refresh) — timeout court, sans retry.
+  Future<Map<String, dynamic>> postAuth(
+    String path, {
+    required Map<String, dynamic> data,
+  }) async {
+    try {
+      final response = await _dio.post(
+        path,
+        data: data,
+        options: Options(
+          sendTimeout: const Duration(seconds: 20),
+          receiveTimeout: PerformanceConfig.loginTimeout,
+        ),
+      );
+      return unwrapData(response.data);
+    } on DioException catch (e) {
+      throw _toApiException(e);
+    }
   }
 
 

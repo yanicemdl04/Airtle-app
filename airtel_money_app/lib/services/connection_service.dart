@@ -8,8 +8,7 @@ import '../config/performance_config.dart';
 import 'api_client.dart';
 import 'app_logger.dart';
 
-/// Résout l'URL backend la plus rapide via GET /health.
-/// Notifie l'UI quand l'état réseau change.
+/// Résout l'URL backend via GET /health et synchronise [ApiClient].
 class ConnectionService extends ChangeNotifier {
   ConnectionService._();
 
@@ -28,17 +27,33 @@ class ConnectionService extends ChangeNotifier {
   bool get isConnected => _activeUrl != null;
   bool get isResolving => _resolving;
 
-  /// Teste une URL et retourne la latence en ms, ou null si échec.
+  /// À appeler avant tout appel API (login, restore session, etc.).
+  Future<bool> ensureConnected({bool force = false}) async {
+    if (force && _activeUrl != null) {
+      final ms = await probe(_activeUrl!);
+      if (ms != null) {
+        _latencyMs = ms;
+        _lastResolvedAt = DateTime.now();
+        _lastError = null;
+        return true;
+      }
+    }
+    return resolveBestUrl(force: force);
+  }
+
   Future<int?> probe(
     String baseUrl, {
     Duration timeout = PerformanceConfig.healthProbeTimeout,
     CancelToken? cancelToken,
   }) async {
+    if (baseUrl.isEmpty) return null;
+
     final dio = Dio(
       BaseOptions(
         baseUrl: baseUrl,
         connectTimeout: timeout,
         receiveTimeout: timeout,
+        headers: _probeHeaders(baseUrl),
       ),
     );
     final stopwatch = Stopwatch()..start();
@@ -48,7 +63,7 @@ class ConnectionService extends ChangeNotifier {
         cancelToken: cancelToken,
       );
       stopwatch.stop();
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 && _isHealthyResponse(response.data)) {
         return stopwatch.elapsedMilliseconds;
       }
     } on DioException catch (e) {
@@ -61,7 +76,21 @@ class ConnectionService extends ChangeNotifier {
     return null;
   }
 
-  /// Lance les sondes en parallèle et retient la première URL qui répond.
+  bool _isHealthyResponse(Map<String, dynamic>? data) {
+    if (data == null) return false;
+
+    final nested = data['data'];
+    final body = nested is Map<String, dynamic> ? nested : data;
+
+    // Nouveau backend : GET /api/health
+    final status = body['status'] as String?;
+    final database = body['database'] as String?;
+    if (status == 'ok' && database == 'connected') return true;
+
+    // Ancien format (rétrocompatibilité)
+    return body['service'] == 'airtel-money-api';
+  }
+
   Future<bool> resolveBestUrl({
     String? manualUrl,
     bool force = false,
@@ -86,42 +115,55 @@ class ConnectionService extends ChangeNotifier {
     notifyListeners();
 
     await ApiConfig.init();
-    final saved = await ApiConfig.loadSavedUrl();
-    final candidates = ApiConfig.candidateUrls(savedUrl: manualUrl ?? saved);
+    final saved = manualUrl ?? await ApiConfig.loadSavedUrl();
+    final hadSaved = saved != null && saved.isNotEmpty;
+    final candidates = await ApiConfig.candidateUrls(savedUrl: saved);
 
     _lastError = null;
-    if (manualUrl == null) {
-      _activeUrl = null;
-      _latencyMs = null;
-    }
 
-    final platformDefault = ApiConfig.baseUrl;
-    final ordered = [
+    final ordered = _uniqueOrdered([
       if (manualUrl != null) ApiConfig.normalize(manualUrl),
-      platformDefault,
-      ...candidates.where((u) => u != platformDefault),
-    ].toSet().toList();
+      if (saved != null && saved.isNotEmpty) ApiConfig.normalize(saved),
+      if (ApiConfig.hasBuildTimeUrl) ApiConfig.baseUrl,
+      if (ApiConfig.baseUrl.isNotEmpty) ApiConfig.baseUrl,
+      ...candidates,
+    ]);
 
     final best = await _raceProbes(ordered);
 
     _resolving = false;
 
     if (best == null) {
-      _lastError ??=
-          'Serveur inaccessible. Vérifiez que le backend tourne (npm run start:dev).\n'
-          '${ApiConfig.platformHint}';
+      _activeUrl = null;
+      _latencyMs = null;
+      _lastError ??= _buildUnreachableMessage();
       notifyListeners();
       return false;
     }
 
     _applyResolved(best.$1, best.$2);
-    await ApiConfig.saveUrl(best.$1);
+
+    // Ne pas écraser une URL manuelle sauvegardée par une auto-détection.
+    if (manualUrl != null || !hadSaved) {
+      await ApiConfig.saveUrl(best.$1);
+    }
+
     _lastResolvedAt = DateTime.now();
     notifyListeners();
     return true;
   }
 
-  /// Retourne dès que la première sonde réussit ; annule les autres.
+  List<String> _uniqueOrdered(List<String> urls) {
+    final seen = <String>{};
+    final result = <String>[];
+    for (final url in urls) {
+      if (url.isEmpty || seen.contains(url)) continue;
+      seen.add(url);
+      result.add(url);
+    }
+    return result;
+  }
+
   Future<(String url, int ms)?> _raceProbes(List<String> urls) async {
     if (urls.isEmpty) return null;
 
@@ -155,14 +197,22 @@ class ConnectionService extends ChangeNotifier {
       );
     } finally {
       for (final token in cancelTokens) {
-        if (!token.isCancelled) token.cancel('URL trouvée ou échec global');
+        if (!token.isCancelled) token.cancel('Résolution terminée');
       }
     }
   }
 
-  /// Teste une URL saisie manuellement (écran de config).
   Future<bool> testManualUrl(String url) async {
-    final normalized = ApiConfig.normalize(url);
+    final trimmed = url.trim();
+    if (ApiConfig.looksLikePlaceholder(trimmed)) {
+      _lastError =
+          'URL d’exemple détectée — copiez l’URL réelle affichée par ngrok '
+          '(Forwarding https://…).ngrok-free.app → http://localhost:…)';
+      notifyListeners();
+      return false;
+    }
+
+    final normalized = ApiConfig.normalize(trimmed);
     final ms = await probe(normalized);
     if (ms == null) {
       notifyListeners();
@@ -184,17 +234,23 @@ class ConnectionService extends ChangeNotifier {
     notifyListeners();
   }
 
-  void updateAfterManualTest(String url, int ms) {
-    _applyResolved(url, ms);
-    _lastResolvedAt = DateTime.now();
-    notifyListeners();
-  }
-
   void _applyResolved(String url, int ms) {
     _activeUrl = url;
     _latencyMs = ms;
     _lastError = null;
+    ApiConfig.setResolvedUrl(url);
     ApiClient.instance.updateBaseUrl(url);
+  }
+
+  String _buildUnreachableMessage() {
+    return 'Serveur inaccessible.\n'
+        '1. Backend : cd backend && docker compose up -d && npm run start:dev\n'
+        '2. ${ApiConfig.platformHint}';
+  }
+
+  Map<String, String> _probeHeaders(String baseUrl) {
+    if (!baseUrl.contains('ngrok')) return const {};
+    return const {'ngrok-skip-browser-warning': 'true'};
   }
 
   String _friendlyError(DioException e, String url) {
@@ -204,7 +260,22 @@ class ConnectionService extends ChangeNotifier {
       case DioExceptionType.sendTimeout:
         return 'Délai dépassé pour $url';
       case DioExceptionType.connectionError:
-        return 'Connexion refusée sur $url — backend éteint ou mauvaise IP';
+        return 'Connexion refusée sur $url — backend éteint, mauvaise IP ou pare-feu';
+      case DioExceptionType.badResponse:
+        final code = e.response?.statusCode;
+        if (code == 404) {
+          return 'Endpoint introuvable (404) sur $url/health.\n\n'
+              'Vérifications :\n'
+              '1. ngrok actif → copiez l’URL « Forwarding » (pas un exemple)\n'
+              '2. Backend démarré → npm run start:dev\n'
+              '3. Bon port → ngrok http 3000 (ou 3001 selon .env)\n'
+              '4. Test navigateur → $url/health';
+        }
+        if (code == 502 || code == 503) {
+          return 'ngrok joignable mais backend arrêté ($code).\n'
+              'Lancez : docker compose up -d postgres && npm run start:dev';
+        }
+        return 'Erreur HTTP $code sur $url';
       default:
         return 'Erreur réseau ($url) : ${e.message}';
     }

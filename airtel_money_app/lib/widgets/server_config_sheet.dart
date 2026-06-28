@@ -94,7 +94,10 @@ class _ServerConfigSheetState extends State<_ServerConfigSheet> {
           ),
           const SizedBox(height: 8),
           Text(
-            ApiConfig.platformHint,
+            '${ApiConfig.platformHint}\n\n'
+            'ngrok : lancez « ngrok http 3000 », copiez l’URL https affichée, '
+            'ajoutez /api à la fin.\n\n'
+            'Build APK : ${ApiConfig.apkBuildHint}',
             style: const TextStyle(
               fontSize: 13,
               color: AppColors.textSecondary,
@@ -107,7 +110,7 @@ class _ServerConfigSheetState extends State<_ServerConfigSheet> {
             keyboardType: TextInputType.url,
             decoration: InputDecoration(
               labelText: 'URL du backend',
-              hintText: 'http://10.0.2.2:3001/api',
+              hintText: 'https://abc123.ngrok-free.app/api',
               filled: true,
               fillColor: AppColors.scaffoldBackground,
               border: OutlineInputBorder(

@@ -12,7 +12,7 @@ async function main() {
 
   const alice = await prisma.user.upsert({
     where: { phone: '+243999939477' },
-    update: {},
+    update: { pinHash },
     create: {
       fullName: 'Mutombo Kabila',
       phone: '+243999939477',
@@ -31,7 +31,7 @@ async function main() {
 
   const bob = await prisma.user.upsert({
     where: { phone: '+243888112233' },
-    update: {},
+    update: { pinHash },
     create: {
       fullName: 'Furaha Nzuzi',
       phone: '+243888112233',

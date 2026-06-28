@@ -145,10 +145,7 @@ class _AirtelMoneyHomePageState extends State<AirtelMoneyHomePage> {
                         ),
                       ).staggerFadeSlide(index: 4),
                       const SizedBox(height: AppSpacing.sm),
-                      if (initialLoad)
-                        const PromoCarouselShimmer()
-                      else
-                        const PromoCarousel().staggerFadeSlide(index: 5),
+                      const PromoCarousel().staggerFadeSlide(index: 5),
                       const SizedBox(height: AppSpacing.sm),
                       SectionHeader(
                         title: 'Transactions récentes',

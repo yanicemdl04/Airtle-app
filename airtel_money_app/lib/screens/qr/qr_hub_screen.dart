@@ -4,11 +4,46 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../../constants/colors.dart';
 import '../../constants/spacing.dart';
 import '../../routes/app_routes.dart';
+import '../../services/wallet_store.dart';
 import '../../widgets/glass_container.dart';
+import '../../widgets/qr_display.dart';
 
 /// Hub QR : scan et affichage du QR personnel.
-class QrHubScreen extends StatelessWidget {
+class QrHubScreen extends StatefulWidget {
   const QrHubScreen({super.key});
+
+  @override
+  State<QrHubScreen> createState() => _QrHubScreenState();
+}
+
+class _QrHubScreenState extends State<QrHubScreen> {
+  bool _loadingQr = false;
+  String? _qrError;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadQr();
+  }
+
+  Future<void> _loadQr({bool force = false}) async {
+    if (WalletStore.instance.cachedQr != null && !force) return;
+    setState(() {
+      _loadingQr = true;
+      _qrError = null;
+    });
+    try {
+      await WalletStore.instance.fetchMyQr(force: force);
+      if (mounted) setState(() => _loadingQr = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loadingQr = false;
+          _qrError = 'QR indisponible. Vérifiez votre connexion.';
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -77,6 +112,75 @@ class QrHubScreen extends StatelessWidget {
                   onTap: () => Navigator.pushNamed(context, AppRoutes.myQr),
                   glass: true,
                 ).animate(delay: 80.ms).fadeIn().slideY(begin: 0.08, end: 0),
+                const SizedBox(height: AppSpacing.sm),
+                ListenableBuilder(
+                  listenable: WalletStore.instance,
+                  builder: (context, _) {
+                    final qrData = WalletStore.instance.cachedQr;
+                    return GlassContainer(
+                      padding: const EdgeInsets.all(AppSpacing.sm),
+                      child: Column(
+                        children: [
+                          const Text(
+                            'Votre code de paiement',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          if (qrData == null && _loadingQr)
+                            const SizedBox(
+                              height: 180,
+                              child: Center(
+                                child: CircularProgressIndicator(
+                                  color: AppColors.primaryRed,
+                                ),
+                              ),
+                            )
+                          else if (qrData == null)
+                            SizedBox(
+                              height: 180,
+                              child: Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(
+                                      Icons.qr_code_2_rounded,
+                                      size: 56,
+                                      color: AppColors.textMuted,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      _qrError ?? 'QR indisponible',
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                        color: AppColors.textSecondary,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    TextButton.icon(
+                                      onPressed: () => _loadQr(force: true),
+                                      icon: const Icon(Icons.refresh_rounded,
+                                          size: 18),
+                                      label: const Text('Réessayer'),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            )
+                          else
+                            QrDisplay(
+                              qrData: qrData,
+                              size: 180,
+                              showPayId: false,
+                            ),
+                        ],
+                      ),
+                    );
+                  },
+                ).animate(delay: 120.ms).fadeIn(),
                 const SizedBox(height: AppSpacing.md),
                 GlassContainer(
                   padding: const EdgeInsets.all(AppSpacing.sm),

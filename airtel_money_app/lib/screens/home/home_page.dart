@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
 import '../../animations/stagger_animation.dart';
+import '../../constants/app_assets.dart';
 import '../../constants/colors.dart';
 import '../../constants/spacing.dart';
 import '../../routes/app_routes.dart';
@@ -9,6 +10,8 @@ import '../../services/notification_center.dart';
 import '../../services/wallet_store.dart';
 import '../../widgets/airtel_card.dart';
 import '../../widgets/app_header.dart';
+import '../../widgets/profile_avatar.dart';
+import '../../widgets/app_image.dart';
 import '../../widgets/promo_carousel.dart';
 import '../../widgets/section_header.dart';
 import '../../widgets/service_tile.dart';
@@ -97,29 +100,43 @@ class _HomePageState extends State<HomePage> {
                         onAirtelMoney: _openAirtelMoney,
                       ).staggerFadeSlide(index: 3),
                       const SizedBox(height: AppSpacing.sm),
-                      if (initialLoad)
-                        const PromoCarouselShimmer()
-                      else
-                        const PromoCarousel().staggerFadeSlide(index: 4),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.sm,
+                        ),
+                        child: SizedBox(
+                          width: double.infinity,
+                          height: 120,
+                          child: AppImage(
+                            asset: AppAssets.homeBanner,
+                            fit: BoxFit.cover,
+                            borderRadius: BorderRadius.circular(
+                              AppSpacing.cardRadius,
+                            ),
+                          ),
+                        ),
+                      ).staggerFadeSlide(index: 4),
+                      const SizedBox(height: AppSpacing.sm),
+                      const PromoCarousel().staggerFadeSlide(index: 5),
                       const SizedBox(height: AppSpacing.sm),
                       SectionHeader(
                         title: 'Services',
                         actionLabel: 'Voir plus',
                         onAction: _openAirtelMoney,
-                      ).staggerFadeSlide(index: 5),
+                      ).staggerFadeSlide(index: 6),
                       const SizedBox(height: AppSpacing.xs),
                       _ServicesGrid(onAirtelMoney: _openAirtelMoney)
-                          .staggerFadeSlide(index: 6),
+                          .staggerFadeSlide(index: 7),
                       const SizedBox(height: AppSpacing.sm),
                       SectionHeader(
                         title: 'Transactions récentes',
                         actionLabel: 'Historique',
                         onAction: _openTransactions,
-                      ).staggerFadeSlide(index: 7),
+                      ).staggerFadeSlide(index: 8),
                       const SizedBox(height: AppSpacing.xs),
                       _RecentTransactions(
                         onSend: _openSendMoney,
-                      ).staggerFadeSlide(index: 8),
+                      ).staggerFadeSlide(index: 9),
                     ],
                   ),
                 );
@@ -172,20 +189,7 @@ class _ProfileBalanceCardState extends State<_ProfileBalanceCard> {
         children: [
           Row(
             children: [
-              CircleAvatar(
-                radius: 22,
-                backgroundColor: AppColors.redTint,
-                child: Text(
-                  store.ownerName.isNotEmpty
-                      ? store.ownerName[0].toUpperCase()
-                      : '?',
-                  style: const TextStyle(
-                    color: AppColors.primaryRed,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 18,
-                  ),
-                ),
-              ),
+              ProfileAvatar(name: store.ownerName, radius: 22),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -205,12 +209,25 @@ class _ProfileBalanceCardState extends State<_ProfileBalanceCard> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Prépayé · ${store.ownerPhone}',
+                      'Prépayé · ${store.ownerPhone.isNotEmpty ? store.ownerPhone : '—'}',
                       style: const TextStyle(
                         fontSize: 12.5,
                         color: AppColors.textSecondary,
                       ),
                     ),
+                    if (store.ownerPayId.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        'Compte · ${store.ownerPayId}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppColors.textMuted,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),

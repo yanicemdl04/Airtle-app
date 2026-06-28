@@ -5,6 +5,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
+import { HealthModule } from './health/health.module';
 import { LogsModule } from './logs/logs.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { QrModule } from './qr/qr.module';
@@ -16,11 +17,11 @@ import { WalletsModule } from './wallets/wallets.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    // Rate limiting global : 100 requêtes / 60 secondes par IP.
     ThrottlerModule.forRoot([
       { name: 'default', ttl: 60_000, limit: 100 },
     ]),
     PrismaModule,
+    HealthModule,
     LogsModule,
     AuthModule,
     UsersModule,
@@ -31,9 +32,7 @@ import { WalletsModule } from './wallets/wallets.module';
   ],
   controllers: [AppController],
   providers: [
-    // JWT exigé par défaut sur toutes les routes (sauf @Public()).
     { provide: APP_GUARD, useClass: JwtAuthGuard },
-    // Rate limiting appliqué globalement.
     { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })

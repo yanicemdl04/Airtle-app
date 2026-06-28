@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../screens/airtel_money_home.dart';
@@ -30,8 +32,11 @@ class _MainShellState extends State<MainShell> {
   @override
   void initState() {
     super.initState();
-    // SWR : données cache affichées, refresh silencieux si TTL expiré.
-    WalletStore.instance.ensureDashboardFresh();
+    final store = WalletStore.instance;
+    store.refreshAll(force: true).catchError((_) => null);
+    unawaited(
+      store.fetchMyQr(force: true).then((_) {}, onError: (_) {}),
+    );
   }
 
   @override

@@ -4,74 +4,68 @@ Interface mobile **Airtel Money** connectée au backend NestJS (`../backend`).
 
 ## Prérequis
 
-1. Backend démarré : `cd ../backend && npm run start:dev`
-2. PostgreSQL + seed : `npm run db:seed` (Alice / Bob, PIN `1234`)
+1. PostgreSQL : `cd ../backend && docker compose up -d postgres`
+2. Backend : `npm run start:dev` (écoute sur `0.0.0.0:3001` — accessible réseau local)
+3. Seed : `npm run db:seed` (Alice / Bob, PIN `1234`)
 
-## Lancer l'app
+## Lancer l'app (dev)
 
 ```bash
 flutter pub get
 flutter run
 ```
 
-## Connexion API
+| Plateforme | URL par défaut |
+|---|---|
+| Android émulateur | `http://10.0.2.2:3001/api` (auto) |
+| Windows / iOS sim | `http://127.0.0.1:3001/api` (auto) |
+| **Téléphone physique** | Configurer dans l'app → `http://<IP_DU_PC>:3001/api` |
 
-L'app détecte automatiquement le serveur via `GET /health` (test parallèle, ~3s max).
+## Build APK pour un autre téléphone
 
+Le téléphone doit joindre le **PC qui héberge le backend** (même Wi-Fi, ou serveur déployé).
 
-| Plateforme                     | URL par défaut               |
-| ------------------------------ | ---------------------------- |
-| Android émulateur              | `http://10.0.2.2:3000/api`   |
-| Windows / Web / iOS simulateur | `http://127.0.0.1:3000/api`  |
-| **Téléphone physique**         | `http://<IP_DU_PC>:3000/api` |
+### 1. Préparer le backend sur le PC
 
+```bash
+cd ../backend
+docker compose up -d postgres
+npm run start:dev
+```
 
-### Téléphone physique (important)
+Vérifier dans `.env` : `HOST=0.0.0.0` et `PORT=3001`.
 
-1. Backend démarré : `cd ../backend && npm run start:dev`
-2. PC et téléphone sur le **même Wi-Fi**
-3. Trouver l'IP du PC : `ipconfig` → ex. `192.168.1.15`
-4. Dans l'app : **Configurer le serveur API** → `http://192.168.1.15:3000/api` → **Tester**
-5. Ou au build : `flutter run --dart-define=API_BASE_URL=http://192.168.1.15:3000/api`
+Trouver l'IP du PC : `ipconfig` → ex. `192.168.1.15`
 
-### Dépannage connexion lente
+Tester depuis le navigateur du téléphone : `http://192.168.1.15:3001/api/health`
 
-- Vérifier le bandeau vert **« Serveur OK · XXms »** sur l'écran login
-- Si rouge : backend éteint, mauvaise IP, ou pare-feu Windows bloquant le port 3000
-- Latence normale : **< 200ms** en local
+> Autoriser le port **3001** dans le pare-feu Windows si la connexion échoue.
+
+### 2. Builder l'APK avec l'URL du backend
+
+Remplace `<IP_DU_PC>` par l'IP réelle :
+
+```bash
+flutter build apk --release --dart-define=API_BASE_URL=http://192.168.1.15:3001/api
+```
+
+L'APK généré : `build/app/outputs/flutter-apk/app-release.apk`
+
+### 3. Alternative sans re-build
+
+Installer l'APK, ouvrir l'écran login → appuyer sur le bandeau serveur → saisir `http://192.168.1.15:3001/api` → **Tester** → **Utiliser cette URL**.
 
 ## Comptes de test (seed)
 
+| Utilisateur | Téléphone | PIN |
+|---|---|---|
+| Alice | +243999939477 | 1234 |
+| Bob | +243888112233 | 1234 |
 
-| Utilisateur     | Téléphone     | PIN  |
-| --------------- | ------------- | ---- |
-| Alice (Mutombo) | +243999939477 | 1234 |
-| Bob (Furaha)    | +243888112233 | 1234 |
+## Production (internet public)
 
+Pour un APK utilisable **hors réseau local**, déployer le backend sur un serveur (VPS, cloud) avec HTTPS, puis :
 
-## Flux connectés au backend
-
-- **Login** → `POST /auth/login` (JWT persisté)
-- **Profil + solde** → `GET /users/profile`, `GET /wallet`
-- **Mon QR** → `GET /qr/my`
-- **Scan QR** → extraction `pay_id` + `POST /qr/resolve`
-- **Envoi** → `POST /transactions/send` (idempotency key UUID)
-- **Historique** → `GET /transactions/history`
-- **Notifications** → locales après chaque transaction (succès/échec)
-
-## Structure
-
+```bash
+flutter build apk --release --dart-define=API_BASE_URL=https://api.mondomaine.com/api
 ```
-lib/
-├── config/api_config.dart      # URL backend par plateforme
-├── services/
-│   ├── api_client.dart         # Dio + JWT + refresh token
-│   ├── airtel_api.dart         # Façade REST
-│   └── wallet_store.dart       # État global (profil, wallet, tx)
-├── screens/
-│   ├── auth_gate.dart          # Restaure session ou login
-│   ├── login_screen.dart
-│   └── ...
-└── models/
-```
-

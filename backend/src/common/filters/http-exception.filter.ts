@@ -10,7 +10,7 @@ import { Request, Response } from 'express';
 
 /**
  * Filtre d'exception global : normalise toutes les réponses d'erreur dans un
- * format JSON cohérent et évite de fuiter des détails internes en production.
+ * format JSON cohérent, prêt pour consommation Flutter.
  */
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
@@ -26,11 +26,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         ? exception.getStatus()
         : HttpStatus.INTERNAL_SERVER_ERROR;
 
-    let message: unknown = 'Erreur interne du serveur';
-    if (exception instanceof HttpException) {
-      const res = exception.getResponse();
-      message = typeof res === 'string' ? res : (res as any).message ?? res;
-    }
+    let message = this.resolveMessage(exception, status);
 
     if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
       this.logger.error(
@@ -46,5 +42,29 @@ export class AllExceptionsFilter implements ExceptionFilter {
       timestamp: new Date().toISOString(),
       message,
     });
+  }
+
+  private resolveMessage(exception: unknown, status: number): string | string[] {
+    if (!(exception instanceof HttpException)) {
+      return 'Erreur interne du serveur';
+    }
+
+    const res = exception.getResponse();
+
+    if (typeof res === 'string') {
+      return status === HttpStatus.NOT_FOUND ? 'Resource not found' : res;
+    }
+
+    const body = res as Record<string, unknown>;
+    const raw = body.message ?? body.error ?? 'Erreur';
+
+    if (status === HttpStatus.NOT_FOUND) {
+      const text = Array.isArray(raw) ? raw.join(', ') : String(raw);
+      if (text.startsWith('Cannot ') || text === 'Not Found') {
+        return 'Resource not found';
+      }
+    }
+
+    return raw as string | string[];
   }
 }

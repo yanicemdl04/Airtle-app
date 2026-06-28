@@ -4,14 +4,13 @@ import 'package:flutter/material.dart';
 
 import '../constants/colors.dart';
 import '../config/performance_config.dart';
-import '../services/api_client.dart';
 import '../services/app_logger.dart';
+import '../services/auth_service.dart';
 import '../services/connection_service.dart';
-import '../services/wallet_store.dart';
 import 'login_screen.dart';
 import 'main_shell.dart';
 
-/// Porte d'entrée : restaure la session ou affiche le login.
+/// Porte d'entrée : restaure la session JWT ou affiche le login.
 class AuthGate extends StatefulWidget {
   const AuthGate({super.key});
 
@@ -30,18 +29,16 @@ class _AuthGateState extends State<AuthGate> {
   }
 
   Future<void> _bootstrap() async {
-    await ApiClient.instance.init();
-
-    // Résolution URL en arrière-plan — le login reteste avant connexion.
-    unawaited(ConnectionService.instance.resolveBestUrl());
-
     try {
-      final ok = await WalletStore.instance
+      await ConnectionService.instance.ensureConnected();
+
+      final ok = await AuthService.instance
           .restoreSession()
           .timeout(
             PerformanceConfig.sessionRestoreTimeout,
             onTimeout: () => false,
           );
+
       if (mounted) {
         setState(() {
           _authenticated = ok;
@@ -49,7 +46,7 @@ class _AuthGateState extends State<AuthGate> {
         });
       }
     } catch (e, st) {
-      AppLogger.error('AuthGate', 'Échec restauration session', error: e, stackTrace: st);
+      AppLogger.error('AuthGate', 'Bootstrap auth échoué', error: e, stackTrace: st);
       if (mounted) {
         setState(() {
           _authenticated = false;

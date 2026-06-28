@@ -14,7 +14,7 @@ class PerformanceConfig {
   static const Duration healthProbeTimeout = Duration(seconds: 5);
 
   /// Timeout global des opérations utilisateur.
-  static const Duration loginTimeout = Duration(seconds: 90);
+  static const Duration loginTimeout = Duration(seconds: 45);
   static const Duration sessionRestoreTimeout = Duration(seconds: 30);
   static const Duration connectionResolveTimeout = Duration(seconds: 12);
   static const Duration connectionCacheTtl = Duration(seconds: 30);
